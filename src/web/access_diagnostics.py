@@ -172,6 +172,9 @@ def docker_access_issue(sock_path: str) -> Optional[AccessIssue]:
     message = check_docker_socket_access(sock_path)
     if not message:
         return None
+    if (sock_path or "").strip().startswith("tcp://"):
+        return issue("Docker 事件", message, faq="faq-docker-sock", action=(
+            "检查专用内部网络上的 Docker API 代理；不要把代理端口发布到宿主或局域网。"))
     commands = ""
     risk = ""
     code = "unavailable"

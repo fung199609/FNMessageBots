@@ -1,10 +1,11 @@
-"""Docker Engine Unix socket 可读性诊断（挂载后仍可能因 UID/GID 无权限）。"""
+"""Docker Engine Unix socket or restricted TCP proxy reachability diagnostics."""
 
 from __future__ import annotations
 
 import os
 import stat as stat_mod
 from typing import Optional
+from urllib.parse import urlsplit
 from utils.access_guidance import docker_permission_commands, in_container
 
 try:
@@ -46,6 +47,29 @@ def check_docker_socket_access(sock_path: str) -> Optional[str]:
     """
     sp = (sock_path or "").strip() or "/var/run/docker.sock"
     faq = "详见常见问题 · 第13条（faq#faq-docker-sock）。"
+
+    if sp.startswith("tcp://"):
+        try:
+            parsed = urlsplit(sp)
+            if not parsed.hostname or not parsed.port or parsed.username or parsed.password or parsed.path not in ("", "/"):
+                return f"Docker：代理地址格式无效：{sp}。{faq}"
+        except ValueError:
+            return f"Docker：代理地址格式无效：{sp}。{faq}"
+        if docker_sdk is None:
+            return "Docker：未安装 Docker SDK，无法验证受限代理。" + faq
+        client = None
+        try:
+            client = docker_sdk.DockerClient(base_url=sp, timeout=3)
+            client.ping()
+            return None
+        except Exception as api_err:
+            return f"Docker：受限代理 {sp} 连接或 API ping 失败（{api_err}）。{faq}"
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
     try:
         st = os.stat(sp)

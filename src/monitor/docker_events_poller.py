@@ -40,6 +40,12 @@ DOCKER_ACTION_TO_EVENT: Dict[str, str] = {
 DOCKER_POLL_EVENTS = frozenset(DOCKER_ACTION_TO_EVENT.values())
 
 
+def _docker_base_url(endpoint: str) -> str:
+    """Allow a restricted Docker API proxy on a private Compose network."""
+    endpoint = (endpoint or "").strip()
+    return endpoint if endpoint.startswith("tcp://") else f"unix://{endpoint}"
+
+
 def _docker_engine_event_filters(monitor_events: Optional[List[str]]) -> Dict[str, List[str]]:
     """构建 Docker Engine /events 的 filters：仅订阅用户勾选的容器 Action（减少无用事件）。"""
     me = set(monitor_events or [])
@@ -384,7 +390,7 @@ class DockerEventsPoller:
                     continue
                 since_ts = self._effective_since_for_connect()
                 ev_filters = _docker_engine_event_filters(list(self.monitor_events))
-                base_url = f"unix://{self.socket_path}"
+                base_url = _docker_base_url(self.socket_path)
                 self.logger.debug(
                     "Docker events 连接 socket=%s since=%s filters=%s",
                     self.socket_path,
@@ -454,7 +460,7 @@ class DockerEventsPoller:
                 "monitor_events 未勾选任何 Docker 容器事件，不连接 Docker Engine、不订阅 events",
             )
             return
-        if not Path(self.socket_path).exists():
+        if not self.socket_path.startswith("tcp://") and not Path(self.socket_path).exists():
             self.logger.warning("Docker socket 不存在: %s，跳过 DockerEventsPoller", self.socket_path)
             return
         self._align_since_cursor_to_start_time()
